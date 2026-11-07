@@ -1,0 +1,35 @@
+name: Run Hide and Seek Simulation
+
+on:
+  schedule:
+    - cron: '*/30 * * * *' # Runs every 30 minutes
+  workflow_dispatch:       # Allows manual trigger from the Actions tab
+
+permissions:
+  contents: write
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run simulation
+        run: python main.py
+
+      - name: Commit and push results
+        run: |
+          git config --local user.email "github-actions[bot]@://github.com"
+          git config --local user.name "github-actions[bot]"
+          git add match.gif state.json README.md
+          git commit -m "🤖 Simulate Match #$(jq .match_id state.json)" || exit 0
+          git push
