@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "match.gif",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "state.json",
+      "use": "@vercel/static"
+    }
+  ]
+}
