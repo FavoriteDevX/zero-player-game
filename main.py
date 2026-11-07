@@ -1,8 +1,10 @@
 import os
+import io
 import json
 import random
 import math
 import numpy as np
+import cairosvg
 from PIL import Image, ImageDraw
 from datetime import datetime, timezone
 
@@ -30,20 +32,19 @@ COLOR_VISION = (240, 80, 80, 45)
 def load_sprite(filename):
     path = os.path.join("assets", filename)
     if os.path.exists(path):
-        return (
-            Image.open(path)
-            .convert("RGBA")
-            .resize((CELL_SIZE, CELL_SIZE), Image.Resampling.NEAREST)
+        png_bytes = cairosvg.svg2png(
+            url=path, output_width=CELL_SIZE, output_height=CELL_SIZE
         )
+        return Image.open(io.BytesIO(png_bytes)).convert("RGBA")
     return None
 
 
 SPRITES = {
-    "floor": load_sprite("floor.png"),
-    "wall": load_sprite("wall.png"),
-    "box": load_sprite("box.png"),
-    "hider": load_sprite("hider.png"),
-    "seeker": load_sprite("seeker.png"),
+    "floor": load_sprite("floor.svg"),
+    "wall": load_sprite("wall.svg"),
+    "box": load_sprite("box.svg"),
+    "hider": load_sprite("hider.svg"),
+    "seeker": load_sprite("seeker.svg"),
 }
 
 
@@ -52,8 +53,8 @@ class HideAndSeekEnv:
         self.grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
         self._build_map()
         # Spawn positions [row, col]
-        self.hiders = [[2, 2], [4, 3]]
-        self.seekers = [[12, 12], [11, 13]]
+        self.hiders = [[2, 2], [4, 7]]
+        self.seekers = [[12, 12], [11, 4]]
         self.caught = [False, False]
 
     def _build_map(self):
@@ -70,9 +71,9 @@ class HideAndSeekEnv:
 
         # Movable boxes near doorways
         self.grid[5, 5] = BOX
-        self.grid[5, 8] = BOX
         self.grid[7, 5] = BOX
-        self.grid[4, 8] = BOX
+        self.grid[5, 8] = BOX
+        self.grid[3, 8] = BOX
 
     def has_line_of_sight(self, pos1, pos2):
         r0, c0 = pos1
@@ -289,9 +290,8 @@ def main():
         winner = "🔴 Seekers"
         state["seeker_wins"] += 1
     else:
-        winner = "🔵 Hiders"
-        state["hider_wins"] += 1
-
+winner = "🔵 Hiders"
+state["hider_wins"] += 1
 with open("state.json", "w", encoding="utf-8") as f:
 json.dump(state, f, indent=2)
 # Update README.md
