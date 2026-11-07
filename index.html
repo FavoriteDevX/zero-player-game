@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autonomous Multi-Agent Hide & Seek</title>
+  <style>
+    body {
+      background-color: #16161d;
+      color: #f0f0f5;
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: #22242c;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      text-align: center;
+      max-width: 520px;
+    }
+    img {
+      width: 100%;
+      max-width: 480px;
+      border-radius: 8px;
+      border: 2px solid #373a46;
+      margin: 16px 0;
+      image-rendering: pixelated;
+    }
+    .scoreboard {
+      display: flex;
+      justify-content: space-around;
+      background: #1a1b22;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      font-weight: bold;
+    }
+    .hiders { color: #379bf5; }
+    .seekers { color: #eb4141; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🤖 Multi-Agent Hide & Seek</h1>
+    <p id="match-title">Loading latest match...</p>
+    <img id="replay" src="match.gif" alt="Match Replay" />
+    <div class="scoreboard">
+      <span class="hiders">🔵 Hiders: <span id="hider-wins">0</span></span>
+      <span class="seekers">🔴 Seekers: <span id="seeker-wins">0</span></span>
+    </div>
+  </div>
+
+  <script>
+    fetch('state.json?t=' + Date.now())
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('match-title').innerText = `Latest Replay: Match #${data.match_id}`;
+        document.getElementById('hider-wins').innerText = data.hider_wins;
+        document.getElementById('seeker-wins').innerText = data.seeker_wins;
+      });
+  </script>
+</body>
+</html>
