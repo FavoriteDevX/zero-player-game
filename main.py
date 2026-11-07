@@ -1,3 +1,4 @@
+import os
 import json
 import random
 import math
@@ -16,21 +17,43 @@ EMPTY = 0
 WALL = 1
 BOX = 2
 
-# Colors (RGB)
+# Fallback Colors (RGB / RGBA)
 COLOR_BG = (30, 30, 36)
 COLOR_GRID = (45, 45, 55)
 COLOR_WALL = (100, 100, 115)
 COLOR_BOX = (210, 150, 75)
 COLOR_HIDER = (65, 165, 245)
 COLOR_SEEKER = (240, 80, 80)
-COLOR_VISION = (240, 80, 80, 45)  # RGBA
+COLOR_VISION = (240, 80, 80, 45)
+
+
+def load_sprite(filename):
+    path = os.path.join("assets", filename)
+    if os.path.exists(path):
+        return (
+            Image.open(path)
+            .convert("RGBA")
+            .resize((CELL_SIZE, CELL_SIZE), Image.Resampling.NEAREST)
+        )
+    return None
+
+
+SPRITES = {
+    "floor": load_sprite("floor.png"),
+    "wall": load_sprite("wall.png"),
+    "box": load_sprite("box.png"),
+    "hider": load_sprite("hider.png"),
+    "seeker": load_sprite("seeker.png"),
+}
+
 
 class HideAndSeekEnv:
     def __init__(self):
         self.grid = np.zeros((GRID_SIZE, GRID_SIZE), dtype=int)
         self._build_map()
-        self.hiders = [[2, 2], [2, 12]]
-        self.seekers = [[12, 7]]
+        # Spawn positions [row, col]
+        self.hiders = [[2, 2], [4, 3]]
+        self.seekers = [[12, 12], [11, 13]]
         self.caught = [False, False]
 
     def _build_map(self):
@@ -47,9 +70,9 @@ class HideAndSeekEnv:
 
         # Movable boxes near doorways
         self.grid[5, 5] = BOX
-        self.grid[7, 10] = BOX
-        self.grid[3, 8] = BOX
-        self.grid[8, 4] = BOX
+        self.grid[5, 8] = BOX
+        self.grid[7, 5] = BOX
+        self.grid[4, 8] = BOX
 
     def has_line_of_sight(self, pos1, pos2):
         r0, c0 = pos1
@@ -73,13 +96,20 @@ class HideAndSeekEnv:
         if not (0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE):
             return pos
 
+        # Prevent agents from overlapping on the same tile
+        if [nr, nc] in self.hiders or [nr, nc] in self.seekers:
+            return pos
+
         target = self.grid[nr, nc]
         if target == EMPTY:
             return [nr, nc]
         elif target == BOX and can_push:
             nnr, nnc = nr + dr, nc + dc
-            if 0 <= nnr < GRID_SIZE and 0 <= nnc < GRID_SIZE and self.grid[nnr, nnc] == EMPTY:
-                # Ensure no agent is on the destination tile
+            if (
+                0 <= nnr < GRID_SIZE
+                and 0 <= nnc < GRID_SIZE
+                and self.grid[nnr, nnc] == EMPTY
+            ):
                 if [nnr, nnc] not in self.hiders and [nnr, nnc] not in self.seekers:
                     self.grid[nr, nc] = EMPTY
                     self.grid[nnr, nnc] = BOX
@@ -100,9 +130,10 @@ class HideAndSeekEnv:
                 random.shuffle(dirs)
                 for dr, dc in dirs:
                     nr, nc = h_pos[0] + dr, h_pos[1] + dc
-                    if self.grid[nr, nc] == BOX:
-                        best_move = (dr, dc)
-                        break
+                    if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
+                        if self.grid[nr, nc] == BOX:
+                            best_move = (dr, dc)
+                            break
                 if best_move == (0, 0):
                     best_move = random.choice(dirs)
             else:
@@ -110,33 +141,46 @@ class HideAndSeekEnv:
                 best_dist = -1
                 for dr, dc in dirs + [(0, 0)]:
                     nr, nc = h_pos[0] + dr, h_pos[1] + dc
-                    if self.grid[nr, nc] == EMPTY:
-                        d = min(math.hypot(nr - s[0], nc - s[1]) for s in self.seekers)
-                        if d > best_dist:
-                            best_dist = d
-                            best_move = (dr, dc)
+                    if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
+                        if self.grid[nr, nc] == EMPTY or (dr == 0 and dc == 0):
+                            d = min(
+                                math.hypot(nr - s[0], nc - s[1]) for s in self.seekers
+                            )
+                            if d > best_dist:
+                                best_dist = d
+                                best_move = (dr, dc)
 
-            self.hiders[i] = self.move_agent(h_pos, best_move[0], best_move[1], can_push=is_prep)
+            self.hiders[i] = self.move_agent(
+                h_pos, best_move[0], best_move[1], can_push=is_prep
+            )
 
         # 2. Seekers AI (Frozen during prep, chase visible hiders later)
         if not is_prep:
             for i, s_pos in enumerate(self.seekers):
                 visible_hiders = [
-                    h for idx, h in enumerate(self.hiders)
+                    h
+                    for idx, h in enumerate(self.hiders)
                     if not self.caught[idx] and self.has_line_of_sight(s_pos, h)
                 ]
                 best_move = random.choice(dirs)
                 if visible_hiders:
-                    target = visible_hiders[0]
+                    # Target closest visible hider
+                    target = min(
+                        visible_hiders,
+                        key=lambda h: math.hypot(h[0] - s_pos[0], h[1] - s_pos[1]),
+                    )
                     best_dist = 999
                     for dr, dc in dirs:
                         nr, nc = s_pos[0] + dr, s_pos[1] + dc
-                        if self.grid[nr, nc] == EMPTY:
-                            d = math.hypot(nr - target[0], nc - target[1])
-                            if d < best_dist:
-                                best_dist = d
-                                best_move = (dr, dc)
-                self.seekers[i] = self.move_agent(s_pos, best_move[0], best_move[1], can_push=False)
+                        if 0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE:
+                            if self.grid[nr, nc] == EMPTY:
+                                d = math.hypot(nr - target[0], nc - target[1])
+                                if d < best_dist:
+                                    best_dist = d
+                                    best_move = (dr, dc)
+                self.seekers[i] = self.move_agent(
+                    s_pos, best_move[0], best_move[1], can_push=False
+                )
 
         # 3. Check tags
         for idx, h in enumerate(self.hiders):
@@ -149,20 +193,30 @@ class HideAndSeekEnv:
         img = Image.new("RGBA", (img_size, img_size), COLOR_BG)
         draw = ImageDraw.Draw(img)
 
-        # Draw grid & tiles
+        # 1. Draw floor, walls, and boxes
         for r in range(GRID_SIZE):
             for c in range(GRID_SIZE):
                 x0, y0 = c * CELL_SIZE, r * CELL_SIZE
                 x1, y1 = x0 + CELL_SIZE, y0 + CELL_SIZE
-                draw.rectangle([x0, y0, x1, y1], outline=COLOR_GRID)
+
+                if SPRITES["floor"]:
+                    img.paste(SPRITES["floor"], (x0, y0))
+                else:
+                    draw.rectangle([x0, y0, x1, y1], outline=COLOR_GRID)
 
                 tile = self.grid[r, c]
                 if tile == WALL:
-                    draw.rectangle([x0+1, y0+1, x1-1, y1-1], fill=COLOR_WALL)
+                    if SPRITES["wall"]:
+                        img.paste(SPRITES["wall"], (x0, y0), SPRITES["wall"])
+                    else:
+                        draw.rectangle([x0 + 1, y0 + 1, x1 - 1, y1 - 1], fill=COLOR_WALL)
                 elif tile == BOX:
-                    draw.rectangle([x0+4, y0+4, x1-4, y1-4], fill=COLOR_BOX)
+                    if SPRITES["box"]:
+                        img.paste(SPRITES["box"], (x0, y0), SPRITES["box"])
+                    else:
+                        draw.rectangle([x0 + 4, y0 + 4, x1 - 4, y1 - 4], fill=COLOR_BOX)
 
-        # Draw Seeker Vision Cone (after prep phase)
+        # 2. Draw Seeker Vision Cone (after prep phase)
         if current_step >= PREP_STEPS:
             overlay = Image.new("RGBA", (img_size, img_size), (0, 0, 0, 0))
             ov_draw = ImageDraw.Draw(overlay)
@@ -171,28 +225,45 @@ class HideAndSeekEnv:
                     for c in range(GRID_SIZE):
                         if self.has_line_of_sight(s, [r, c]):
                             x0, y0 = c * CELL_SIZE, r * CELL_SIZE
-                            ov_draw.rectangle([x0, y0, x0+CELL_SIZE, y0+CELL_SIZE], fill=COLOR_VISION)
+                            ov_draw.rectangle(
+                                [x0, y0, x0 + CELL_SIZE, y0 + CELL_SIZE],
+                                fill=COLOR_VISION,
+                            )
             img = Image.alpha_composite(img, overlay)
             draw = ImageDraw.Draw(img)
 
-        # Draw Hiders
+        # 3. Draw Hiders
         for idx, (r, c) in enumerate(self.hiders):
             if not self.caught[idx]:
-                x0, y0 = c * CELL_SIZE + 5, r * CELL_SIZE + 5
-                x1, y1 = (c + 1) * CELL_SIZE - 5, (r + 1) * CELL_SIZE - 5
-                draw.ellipse([x0, y0, x1, y1], fill=COLOR_HIDER)
+                x0, y0 = c * CELL_SIZE, r * CELL_SIZE
+                if SPRITES["hider"]:
+                    img.paste(SPRITES["hider"], (x0, y0), SPRITES["hider"])
+                else:
+                    draw.ellipse(
+                        [x0 + 5, y0 + 5, x0 + CELL_SIZE - 5, y0 + CELL_SIZE - 5],
+                        fill=COLOR_HIDER,
+                    )
 
-        # Draw Seekers
+        # 4. Draw Seekers
         for r, c in self.seekers:
-            x0, y0 = c * CELL_SIZE + 4, r * CELL_SIZE + 4
-            x1, y1 = (c + 1) * CELL_SIZE - 4, (r + 1) * CELL_SIZE - 4
-            draw.ellipse([x0, y0, x1, y1], fill=COLOR_SEEKER)
+            x0, y0 = c * CELL_SIZE, r * CELL_SIZE
+            if SPRITES["seeker"]:
+                img.paste(SPRITES["seeker"], (x0, y0), SPRITES["seeker"])
+            else:
+                draw.ellipse(
+                    [x0 + 4, y0 + 4, x0 + CELL_SIZE - 4, y0 + CELL_SIZE - 4],
+                    fill=COLOR_SEEKER,
+                )
 
         return img.convert("RGB")
 
+
 def main():
-    with open("state.json", "r") as f:
-        state = json.load(f)
+    if os.path.exists("state.json"):
+        with open("state.json", "r", encoding="utf-8") as f:
+            state = json.load(f)
+    else:
+        state = {"match_id": 0, "hider_wins": 0, "seeker_wins": 0}
 
     env = HideAndSeekEnv()
     frames = []
@@ -209,7 +280,7 @@ def main():
         save_all=True,
         append_images=frames[1:],
         duration=150,
-        loop=0
+        loop=0,
     )
 
     # Update stats
@@ -221,31 +292,5 @@ def main():
         winner = "🔵 Hiders"
         state["hider_wins"] += 1
 
-    with open("state.json", "w") as f:
-        json.dump(state, f, indent=2)
-
-    # Update README.md
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    readme_content = f"""# 🤖 Autonomous Multi-Agent Hide & Seek
-
-This repository plays a self-contained **Multi-Agent Hide & Seek** simulation automatically via GitHub Actions.
-
-### 🎥 Latest Match Replay (Match #{state['match_id']})
-![Match Replay](match.gif)
-
-* **Winner:** {winner}
-* **Last Simulated:** {timestamp}
-* **Rules:** During the first {PREP_STEPS} steps, 🔵 **Hiders** push boxes (`🟨`) to barricade doorways while 🔴 **Seekers** are frozen. Afterward, Seekers use raycast line-of-sight to hunt Hiders.
-
-### 🏆 All-Time Scoreboard
-
-| Team | Wins |
-| :--- | :---: |
-| 🔵 **Hiders** | {state['hider_wins']} |
-| 🔴 **Seekers** | {state['seeker_wins']} |
-"""
-    with open("README.md", "w", encoding="utf-8") as f:
-        f.write(readme_content)
-
-if __name__ == "__main__":
-    main()
+with open("state.json", "w", encoding="utf-8") as f:
+json.dump(state, f, indent=2)
