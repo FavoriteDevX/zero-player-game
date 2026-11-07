@@ -294,3 +294,26 @@ def main():
 
 with open("state.json", "w", encoding="utf-8") as f:
 json.dump(state, f, indent=2)
+# Update README.md
+timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+readme_content = f"""# 🤖 Autonomous Multi-Agent Hide & Seek
+This repository plays a self-contained Multi-Agent Hide & Seek simulation automatically via GitHub Actions.
+
+🎥 Latest Match Replay (Match #{state['match_id']})
+
+• Winner: {winner}
+• Last Simulated: {timestamp}
+• Rules: During the first {PREP_STEPS} steps, 🔵 Hiders push boxes to barricade doorways while 🔴 Seekers are frozen. Afterward, Seekers use raycast line-of-sight to hunt Hiders.
+
+🏆 All-Time Scoreboard
+
+
+Team	Wins
+🔵 Hiders	{state['hider_wins']}
+🔴 Seekers	{state['seeker_wins']}
+"""	
+with open("README.md", "w", encoding="utf-8") as f:	
+f.write(readme_content)	
+
+if name == "main":
+main()
